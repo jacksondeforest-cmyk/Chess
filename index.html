@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>1200 ELO Chess Bot</title>
+    <title>1200 ELO Chess Bot - Click to Move</title>
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <style>
         body { 
@@ -14,14 +14,35 @@
             margin-top: 50px; 
             background-color: #f4f4f9;
         }
-        /* touch-action: none stops the page from scrolling on mobile when dragging pieces */
         #myBoard { 
             width: 400px; 
             max-width: 100%; 
+            /* Disables browser swipe actions on the board */
             touch-action: none; 
         }
         .status { margin-top: 20px; font-size: 1.2rem; font-weight: bold; }
         .explanation { margin-top: 10px; color: #555; max-width: 400px; text-align: center; }
+
+        /* --- New CSS for Click-to-Move Visuals --- */
+        .highlight-selected {
+            background-color: rgba(155, 199, 0, 0.6) !important;
+        }
+        .highlight-legal {
+            position: relative;
+        }
+        /* Draws the little dot for legal moves */
+        .highlight-legal::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 25%;
+            height: 25%;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none; /* Ensures the click goes through the dot to the square */
+        }
     </style>
 </head>
 <body>
@@ -29,7 +50,7 @@
     <h2>Play White vs. an ~1200 ELO Bot</h2>
     <div id="myBoard"></div>
     <div class="status" id="status">Your turn (White)</div>
-    <p class="explanation">This bot looks ahead 2 moves into the future to calculate its best response using the Minimax algorithm.</p>
+    <p class="explanation">Tap a piece to select it, then tap a dot to move!</p>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
@@ -39,33 +60,31 @@
         var board = null;
         var game = new Chess();
         var $status = $('#status');
+        var $board = $('#myBoard');
+        
+        var squareClass = 'square-55d63';
+        var selectedSquare = null;
 
-        // Piece values for the bot to evaluate the board
+        // Bot Evaluation Logic
         var pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 900 };
 
-        // Evaluates the current board state. Positive score = White is winning, Negative = Black is winning.
         function evaluateBoard(game) {
             var totalEvaluation = 0;
             var boardArray = game.board();
             for (var i = 0; i < 8; i++) {
                 for (var j = 0; j < 8; j++) {
-                    totalEvaluation += getPieceValue(boardArray[i][j]);
+                    if (boardArray[i][j] !== null) {
+                        var val = pieceValues[boardArray[i][j].type];
+                        totalEvaluation += boardArray[i][j].color === 'w' ? val : -val;
+                    }
                 }
             }
             return totalEvaluation;
         }
 
-        function getPieceValue(piece) {
-            if (piece === null) return 0;
-            var val = pieceValues[piece.type];
-            return piece.color === 'w' ? val : -val;
-        }
-
-        // Minimax algorithm with Alpha-Beta pruning to look ahead efficiently
+        // Minimax Algorithm
         function minimax(game, depth, alpha, beta, isMaximizingPlayer) {
-            if (depth === 0 || game.game_over()) {
-                return evaluateBoard(game);
-            }
+            if (depth === 0 || game.game_over()) return evaluateBoard(game);
 
             var possibleMoves = game.moves();
 
@@ -92,20 +111,16 @@
             }
         }
 
-        // The Bot's brain
         function makeBotMove() {
             var possibleMoves = game.moves();
             if (possibleMoves.length === 0) return;
 
             var bestMove = null;
-            var bestValue = 9999; // Bot plays Black, so it wants the lowest score possible
+            var bestValue = 9999; 
 
-            // Look through all immediate moves
             for (var i = 0; i < possibleMoves.length; i++) {
                 var move = possibleMoves[i];
                 game.move(move);
-                
-                // Calculate what happens 2 moves into the future
                 var boardValue = minimax(game, 2, -10000, 10000, true);
                 game.undo();
                 
@@ -115,38 +130,62 @@
                 }
             }
 
-            // Fallback in case of weird edge cases
-            if (!bestMove) {
-                bestMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-            }
+            if (!bestMove) bestMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
 
             game.move(bestMove);
             board.position(game.fen());
             updateStatus();
         }
 
-        function onDragStart (source, piece, position, orientation) {
-            if (game.game_over() || piece.search(/^b/) !== -1) {
-                return false;
+        // --- Click to Move Logic ---
+        
+        function removeHighlights() {
+            $board.find('.' + squareClass).removeClass('highlight-selected');
+            $board.find('.' + squareClass).removeClass('highlight-legal');
+        }
+
+        function highlightLegalMoves(square) {
+            var moves = game.moves({ square: square, verbose: true });
+            for (var i = 0; i < moves.length; i++) {
+                $board.find('.square-' + moves[i].to).addClass('highlight-legal');
             }
         }
 
-        function onDrop (source, target) {
-            var move = game.move({
-                from: source,
-                to: target,
-                promotion: 'q'
-            });
+        $board.on('click', '.' + squareClass, function () {
+            if (game.game_over() || game.turn() === 'b') return;
 
-            if (move === null) return 'snapback';
-            
-            updateStatus();
-            window.setTimeout(makeBotMove, 250);
-        }
+            var square = $(this).attr('data-square');
+            var piece = game.get(square);
 
-        function onSnapEnd () {
-            board.position(game.fen());
-        }
+            // If we already selected a piece and are clicking a destination
+            if (selectedSquare) {
+                var moves = game.moves({ square: selectedSquare, verbose: true });
+                var isLegalMove = moves.find(m => m.to === square);
+
+                if (isLegalMove) {
+                    game.move({ from: selectedSquare, to: square, promotion: 'q' });
+                    board.position(game.fen());
+                    removeHighlights();
+                    updateStatus();
+                    selectedSquare = null;
+                    
+                    window.setTimeout(makeBotMove, 250);
+                    return;
+                }
+            }
+
+            // If we clicked on our own piece, select it
+            if (piece && piece.color === 'w') {
+                selectedSquare = square;
+                removeHighlights();
+                $(this).addClass('highlight-selected');
+                highlightLegalMoves(square);
+            } else {
+                // If we clicked an empty square or an enemy piece illegally, clear selection
+                selectedSquare = null;
+                removeHighlights();
+            }
+        });
 
         function updateStatus () {
             var statusHTML = '';
@@ -166,13 +205,10 @@
         }
 
         var config = {
-            draggable: true,
+            draggable: false, // Turned off to prevent mobile scrolling entirely!
             position: 'start',
-            onDragStart: onDragStart,
-            onDrop: onDrop,
-            onSnapEnd: onSnapEnd,
-            // Link directly to the piece images so they actually load
-            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' 
+            // Pulls pieces directly from the package registry so they never break
+            pieceTheme: 'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/img/chesspieces/wikipedia/{piece}.png' 
         };
         
         board = Chessboard('myBoard', config);
