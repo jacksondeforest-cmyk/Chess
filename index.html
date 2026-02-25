@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>800 ELO Chess Bot</title>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            margin-top: 50px; 
+            background-color: #f4f4f9;
+        }
+        #myBoard { width: 400px; max-width: 100%; }
+        .status { margin-top: 20px; font-size: 1.2rem; font-weight: bold; }
+        .explanation { margin-top: 10px; color: #555; max-width: 400px; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <h2>Play White vs. an ~800 ELO Bot</h2>
+    <div id="myBoard"></div>
+    <div class="status" id="status">Your turn (White)</div>
+    <p class="explanation">This bot simulates a beginner level. It will try to capture pieces when available, but makes frequent blunders!</p>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <script>
+        var board = null;
+        var game = new Chess();
+        var $status = $('#status');
+
+        // Simple piece values to help the bot decide what to capture
+        var pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 900 };
+
+        function makeBotMove() {
+            var possibleMoves = game.moves({ verbose: true });
+            
+            // Game over
+            if (possibleMoves.length === 0) return;
+
+            var chosenMove;
+            
+            // 800 ELO Simulation Logic:
+            // 70% of the time, look for captures to simulate basic board awareness.
+            // 30% of the time, make a completely random move to simulate blunders.
+            if (Math.random() < 0.7) {
+                var captures = possibleMoves.filter(move => move.captured);
+                if (captures.length > 0) {
+                    // Sort captures so the bot takes the most valuable piece available
+                    captures.sort((a, b) => pieceValues[b.captured] - pieceValues[a.captured]);
+                    chosenMove = captures[0];
+                } else {
+                    // If nothing to capture, move randomly
+                    chosenMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                }
+            } else {
+                // The 30% blunder chance
+                chosenMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+            }
+
+            // Execute the move
+            game.move(chosenMove.san);
+            board.position(game.fen());
+            updateStatus();
+        }
+
+        // Prevent moving black pieces or moving after game over
+        function onDragStart (source, piece, position, orientation) {
+            if (game.game_over() || piece.search(/^b/) !== -1) {
+                return false;
+            }
+        }
+
+        // Handle the user dropping a piece
+        function onDrop (source, target) {
+            var move = game.move({
+                from: source,
+                to: target,
+                promotion: 'q' // Always promote to a queen for simplicity
+            });
+
+            // Illegal move check
+            if (move === null) return 'snapback';
+            
+            updateStatus();
+            
+            // Trigger the bot's turn after a short delay (so it doesn't feel instant)
+            window.setTimeout(makeBotMove, 400);
+        }
+
+        // Update board position after piece snap
+        function onSnapEnd () {
+            board.position(game.fen());
+        }
+
+        function updateStatus () {
+            var statusHTML = '';
+            var moveColor = game.turn() === 'b' ? 'Black' : 'White';
+
+            if (game.in_checkmate()) {
+                statusHTML = 'Game over, ' + moveColor + ' is in checkmate.';
+            } else if (game.in_draw()) {
+                statusHTML = 'Game over, drawn position';
+            } else {
+                statusHTML = moveColor + ' to move';
+                if (game.in_check()) {
+                    statusHTML += ', ' + moveColor + ' is in check';
+                }
+            }
+            $status.html(statusHTML);
+        }
+
+        var config = {
+            draggable: true,
+            position: 'start',
+            onDragStart: onDragStart,
+            onDrop: onDrop,
+            onSnapEnd: onSnapEnd
+        };
+        
+        // Initialize the board
+        board = Chessboard('myBoard', config);
+        updateStatus();
+    </script>
+</body>
+</html>
