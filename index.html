@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>1200 ELO Chess Bot - Click to Move</title>
+    <title>1200 ELO Chess Bot - Pure Code Pieces</title>
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <style>
         body { 
@@ -17,20 +17,13 @@
         #myBoard { 
             width: 400px; 
             max-width: 100%; 
-            /* Disables browser swipe actions on the board */
             touch-action: none; 
         }
         .status { margin-top: 20px; font-size: 1.2rem; font-weight: bold; }
         .explanation { margin-top: 10px; color: #555; max-width: 400px; text-align: center; }
 
-        /* --- New CSS for Click-to-Move Visuals --- */
-        .highlight-selected {
-            background-color: rgba(155, 199, 0, 0.6) !important;
-        }
-        .highlight-legal {
-            position: relative;
-        }
-        /* Draws the little dot for legal moves */
+        .highlight-selected { background-color: rgba(155, 199, 0, 0.6) !important; }
+        .highlight-legal { position: relative; }
         .highlight-legal::after {
             content: '';
             position: absolute;
@@ -41,7 +34,7 @@
             background-color: rgba(0, 0, 0, 0.3);
             border-radius: 50%;
             transform: translate(-50%, -50%);
-            pointer-events: none; /* Ensures the click goes through the dot to the square */
+            pointer-events: none; 
         }
     </style>
 </head>
@@ -50,7 +43,7 @@
     <h2>Play White vs. an ~1200 ELO Bot</h2>
     <div id="myBoard"></div>
     <div class="status" id="status">Your turn (White)</div>
-    <p class="explanation">Tap a piece to select it, then tap a dot to move!</p>
+    <p class="explanation">Tap a piece, then tap a dot. Pieces are generated with code, so they will always load!</p>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
@@ -65,7 +58,6 @@
         var squareClass = 'square-55d63';
         var selectedSquare = null;
 
-        // Bot Evaluation Logic
         var pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 900 };
 
         function evaluateBoard(game) {
@@ -82,7 +74,6 @@
             return totalEvaluation;
         }
 
-        // Minimax Algorithm
         function minimax(game, depth, alpha, beta, isMaximizingPlayer) {
             if (depth === 0 || game.game_over()) return evaluateBoard(game);
 
@@ -136,8 +127,6 @@
             board.position(game.fen());
             updateStatus();
         }
-
-        // --- Click to Move Logic ---
         
         function removeHighlights() {
             $board.find('.' + squareClass).removeClass('highlight-selected');
@@ -157,7 +146,6 @@
             var square = $(this).attr('data-square');
             var piece = game.get(square);
 
-            // If we already selected a piece and are clicking a destination
             if (selectedSquare) {
                 var moves = game.moves({ square: selectedSquare, verbose: true });
                 var isLegalMove = moves.find(m => m.to === square);
@@ -174,14 +162,12 @@
                 }
             }
 
-            // If we clicked on our own piece, select it
             if (piece && piece.color === 'w') {
                 selectedSquare = square;
                 removeHighlights();
                 $(this).addClass('highlight-selected');
                 highlightLegalMoves(square);
             } else {
-                // If we clicked an empty square or an enemy piece illegally, clear selection
                 selectedSquare = null;
                 removeHighlights();
             }
@@ -205,10 +191,30 @@
         }
 
         var config = {
-            draggable: false, // Turned off to prevent mobile scrolling entirely!
+            draggable: false, 
             position: 'start',
-            // Pulls pieces directly from the package registry so they never break
-            pieceTheme: 'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/img/chesspieces/wikipedia/{piece}.png' 
+            // --- THIS IS THE MAGIC FIX ---
+            // It generates the pieces using standard Unicode characters inside of SVG code!
+            pieceTheme: function(piece) {
+                var solidMap = {
+                    'wK': '♚', 'wQ': '♛', 'wR': '♜', 'wB': '♝', 'wN': '♞', 'wP': '♟',
+                    'bK': '♚', 'bQ': '♛', 'bR': '♜', 'bB': '♝', 'bN': '♞', 'bP': '♟'
+                };
+                
+                var fill = piece.charAt(0) === 'w' ? '#ffffff' : '#000000';
+                // Gives a black outline to white pieces, and a white outline to black pieces so they pop!
+                var stroke = piece.charAt(0) === 'w' ? '#000000' : '#ffffff'; 
+                var strokeWidth = piece.charAt(0) === 'w' ? '1.5' : '1';
+                
+                var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">' +
+                          '<text x="50%" y="50%" font-size="36" dy="0.35em" ' +
+                          'text-anchor="middle" ' +
+                          'fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + strokeWidth + '">' +
+                          solidMap[piece] +
+                          '</text></svg>';
+                
+                return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+            }
         };
         
         board = Chessboard('myBoard', config);
