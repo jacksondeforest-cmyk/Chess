@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>800 ELO Chess Bot</title>
+    <title>1200 ELO Chess Bot</title>
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <style>
         body { 
@@ -14,17 +14,22 @@
             margin-top: 50px; 
             background-color: #f4f4f9;
         }
-        #myBoard { width: 400px; max-width: 100%; }
+        /* touch-action: none stops the page from scrolling on mobile when dragging pieces */
+        #myBoard { 
+            width: 400px; 
+            max-width: 100%; 
+            touch-action: none; 
+        }
         .status { margin-top: 20px; font-size: 1.2rem; font-weight: bold; }
         .explanation { margin-top: 10px; color: #555; max-width: 400px; text-align: center; }
     </style>
 </head>
 <body>
 
-    <h2>Play White vs. an ~800 ELO Bot</h2>
+    <h2>Play White vs. an ~1200 ELO Bot</h2>
     <div id="myBoard"></div>
     <div class="status" id="status">Your turn (White)</div>
-    <p class="explanation">This bot simulates a beginner level. It will try to capture pieces when available, but makes frequent blunders!</p>
+    <p class="explanation">This bot looks ahead 2 moves into the future to calculate its best response using the Minimax algorithm.</p>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
@@ -35,66 +40,110 @@
         var game = new Chess();
         var $status = $('#status');
 
-        // Simple piece values to help the bot decide what to capture
+        // Piece values for the bot to evaluate the board
         var pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 900 };
 
-        function makeBotMove() {
-            var possibleMoves = game.moves({ verbose: true });
-            
-            // Game over
-            if (possibleMoves.length === 0) return;
-
-            var chosenMove;
-            
-            // 800 ELO Simulation Logic:
-            // 70% of the time, look for captures to simulate basic board awareness.
-            // 30% of the time, make a completely random move to simulate blunders.
-            if (Math.random() < 0.7) {
-                var captures = possibleMoves.filter(move => move.captured);
-                if (captures.length > 0) {
-                    // Sort captures so the bot takes the most valuable piece available
-                    captures.sort((a, b) => pieceValues[b.captured] - pieceValues[a.captured]);
-                    chosenMove = captures[0];
-                } else {
-                    // If nothing to capture, move randomly
-                    chosenMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+        // Evaluates the current board state. Positive score = White is winning, Negative = Black is winning.
+        function evaluateBoard(game) {
+            var totalEvaluation = 0;
+            var boardArray = game.board();
+            for (var i = 0; i < 8; i++) {
+                for (var j = 0; j < 8; j++) {
+                    totalEvaluation += getPieceValue(boardArray[i][j]);
                 }
-            } else {
-                // The 30% blunder chance
-                chosenMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+            }
+            return totalEvaluation;
+        }
+
+        function getPieceValue(piece) {
+            if (piece === null) return 0;
+            var val = pieceValues[piece.type];
+            return piece.color === 'w' ? val : -val;
+        }
+
+        // Minimax algorithm with Alpha-Beta pruning to look ahead efficiently
+        function minimax(game, depth, alpha, beta, isMaximizingPlayer) {
+            if (depth === 0 || game.game_over()) {
+                return evaluateBoard(game);
             }
 
-            // Execute the move
-            game.move(chosenMove.san);
+            var possibleMoves = game.moves();
+
+            if (isMaximizingPlayer) {
+                var bestVal = -9999;
+                for (var i = 0; i < possibleMoves.length; i++) {
+                    game.move(possibleMoves[i]);
+                    bestVal = Math.max(bestVal, minimax(game, depth - 1, alpha, beta, !isMaximizingPlayer));
+                    game.undo();
+                    alpha = Math.max(alpha, bestVal);
+                    if (beta <= alpha) break;
+                }
+                return bestVal;
+            } else {
+                var bestVal = 9999;
+                for (var i = 0; i < possibleMoves.length; i++) {
+                    game.move(possibleMoves[i]);
+                    bestVal = Math.min(bestVal, minimax(game, depth - 1, alpha, beta, !isMaximizingPlayer));
+                    game.undo();
+                    beta = Math.min(beta, bestVal);
+                    if (beta <= alpha) break;
+                }
+                return bestVal;
+            }
+        }
+
+        // The Bot's brain
+        function makeBotMove() {
+            var possibleMoves = game.moves();
+            if (possibleMoves.length === 0) return;
+
+            var bestMove = null;
+            var bestValue = 9999; // Bot plays Black, so it wants the lowest score possible
+
+            // Look through all immediate moves
+            for (var i = 0; i < possibleMoves.length; i++) {
+                var move = possibleMoves[i];
+                game.move(move);
+                
+                // Calculate what happens 2 moves into the future
+                var boardValue = minimax(game, 2, -10000, 10000, true);
+                game.undo();
+                
+                if (boardValue < bestValue) {
+                    bestValue = boardValue;
+                    bestMove = move;
+                }
+            }
+
+            // Fallback in case of weird edge cases
+            if (!bestMove) {
+                bestMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+            }
+
+            game.move(bestMove);
             board.position(game.fen());
             updateStatus();
         }
 
-        // Prevent moving black pieces or moving after game over
         function onDragStart (source, piece, position, orientation) {
             if (game.game_over() || piece.search(/^b/) !== -1) {
                 return false;
             }
         }
 
-        // Handle the user dropping a piece
         function onDrop (source, target) {
             var move = game.move({
                 from: source,
                 to: target,
-                promotion: 'q' // Always promote to a queen for simplicity
+                promotion: 'q'
             });
 
-            // Illegal move check
             if (move === null) return 'snapback';
             
             updateStatus();
-            
-            // Trigger the bot's turn after a short delay (so it doesn't feel instant)
-            window.setTimeout(makeBotMove, 400);
+            window.setTimeout(makeBotMove, 250);
         }
 
-        // Update board position after piece snap
         function onSnapEnd () {
             board.position(game.fen());
         }
@@ -121,10 +170,11 @@
             position: 'start',
             onDragStart: onDragStart,
             onDrop: onDrop,
-            onSnapEnd: onSnapEnd
+            onSnapEnd: onSnapEnd,
+            // Link directly to the piece images so they actually load
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' 
         };
         
-        // Initialize the board
         board = Chessboard('myBoard', config);
         updateStatus();
     </script>
